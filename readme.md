@@ -15,17 +15,78 @@ The central finding is that repeated charge-discharge cycling encodes a **learna
 
 ---
 
-## Key Results
+## Results
+
+### Main Ablation (N=256, pristine cycle 0 vs. fatigued cycles 300–400)
 
 | Experiment | Features | Clf Acc (%) | Reg R² |
 |---|---|---|---|
 | Baseline | 8D, no norm | 91.67 ± 4.22 | 0.062 ± 0.125 |
 | **Test A** | **8D + instance norm** | **98.33 ± 1.49** | **0.311 ± 0.039** |
-| Test B | 5D only (no shape) | 86.33 ± 4.64 | 0.006 ± 0.012 |
-| Test C | 8D, extended training | — | 0.235 ± 0.118 |
-| **N=1024 Test A** | **8D + instance norm** | **100.00 ± 0.00** | **0.428 ± 0.041** |
+| Test B | 5D only (no shape features) | 86.33 ± 4.64 | 0.006 ± 0.012 |
+| Test C | 8D, extended training (300 epochs) | — | 0.235 ± 0.118 |
 
-*5-fold stratified cross-validation throughout. Classification: pristine (cycle 0) vs. fatigued (cycles 300–400).*
+*5-fold stratified cross-validation. Classification: pristine (cycle 0) vs. fatigued (cycles 300–400). Regression: predict normalised cycle number from all 600 graphs.*
+
+---
+
+### 4D Minimal Sufficient Descriptor Set (exp_3.py)
+
+Permutation importance identified {r_max, r̄, σ_r, γ̃} as the four dominant features. Training the identical GATv2 with only these four features:
+
+| Config | Features | Clf Acc (%) | Reg R² |
+|---|---|---|---|
+| 8D Baseline | 8D, no norm | 91.67 ± 4.22 | 0.062 ± 0.125 |
+| 8D Test A | 8D + norm | 98.33 ± 1.49 | 0.311 ± 0.039 |
+| **4D Baseline** | **4D, no norm** | **91.67 ± 2.36** | **0.264 ± 0.036** |
+| 4D Test A | 4D + norm | 94.67 ± 1.94 | 0.287 ± 0.045 |
+
+Three key findings from the 4D ablation:
+
+1. **Classification accuracy is exactly preserved** at 91.67% despite a 50% reduction in feature dimensionality — the four dropped features (r_min, d̃, Q25, Q75) contribute no measurable classification information when the four dominant features are already present.
+2. **Fold-to-fold variance nearly halves** (±4.22% → ±2.36%), confirming the dropped features were actively introducing gradient noise and causing the unstable folds 4–5 seen in the 8D baseline.
+3. **Regression R² improves dramatically without normalisation** (0.062 → 0.264): the 4D set in a single standard run matches what required either extended training (Test C: R²=0.235) or instance normalisation (Test A: R²=0.311) in the full 8D case. The dropped features were actively degrading regression convergence.
+
+Context-dependence note: under normalisation, 8D+norm (R²=0.311) still outperforms 4D+norm (R²=0.287) because instance normalisation removes the amplitude noise that was masking the signal in Q25 and Q75, allowing the full 8D set to use all features productively. The 8D+norm configuration is therefore the best overall configuration.
+
+---
+
+### Permutation Importance Feature Ranking (exp_3.py, baseline model, N=256)
+
+| Rank | Feature | ΔAUC (mean) | ±std |
+|---|---|---|---|
+| 1 | r_max | +0.601 | 0.207 |
+| 2 | r̄ (mean bond length) | +0.547 | 0.273 |
+| 3 | skewness γ̃ | +0.317 | 0.270 |
+| 4 | σ_r (bond length std) | +0.316 | 0.270 |
+| 5 | Q25 (lower quartile) | +0.200 | 0.169 |
+| 6 | d̃ (normalised coordination) | +0.168 | 0.233 |
+| 7 | r_min | +0.164 | 0.131 |
+| 8 | Q75 (upper quartile) | +0.097 | 0.073 |
+
+*Baseline AUC = 0.9620 ± 0.0549. Importance = AUC drop when feature is zeroed out across all validation graphs (zero-out, not shuffle, to avoid leaking dataset-level signals).*
+
+r_max is the single most important feature across all five folds — it directly detects the most highly strained bond per atom, the primary signature of plastic damage sites. Q75 ranks last because its upper-tail information is largely redundant with r_max already present in the set.
+
+---
+
+### Finite-Size Scaling: N=1024 (exp_4.py)
+
+| Config | Clf Acc N=256 (%) | Clf Acc N=1024 (%) | Reg R² N=256 | Reg R² N=1024 |
+|---|---|---|---|---|
+| Baseline | 91.67 ± 4.22 | 99.11 ± 1.03 | 0.062 ± 0.125 | 0.296 ± 0.149 † |
+| **Test A** | **98.33 ± 1.49** | **100.00 ± 0.00** | **0.311 ± 0.039** | **0.428 ± 0.041** |
+| Test B | 86.33 ± 4.64 | 99.44 ± 0.61 | 0.006 ± 0.012 | 0.000 ± 0.000 ‡ |
+| Test C | — | — | 0.235 ± 0.118 | 0.379 ± 0.019 |
+
+† Fold 3 collapsed to R²=0.0006 (early stop epoch 30); remaining four folds: R² = 0.370 ± 0.026.  
+‡ All five folds predict the dataset mean (MSE=0.1236, MAE=0.3124; early stop within 27–36 epochs).
+
+Notable N=1024 findings:
+- Test B (5D only) reaches 99.44% classification but **complete regression failure** (R²=0.000) — shape features are strictly necessary for continuous cycle tracking at any system size
+- Test A (8D + norm) hits **100.00% classification** and **R²=0.428 regression**, the best result in the entire study
+- Extended training (Test C, R²=0.379) cannot substitute for instance normalisation (Test A, R²=0.428): the normalisation benefit on regression is structural, not a training-budget artefact
+- Normalisation at N=1024 primarily delivers **6× faster convergence** (~15 vs ~100+ epochs) and **elimination of fold collapses**, rather than accuracy gains
 
 ---
 
@@ -37,7 +98,7 @@ solid_state_battery/
 ├── data_gen_1k.py          # Glass generation + cyclic strain protocol for N=1024
 ├── exp_1.py                # Baseline + Test A + Test B classification & regression (N=256)
 ├── exp_2.py                # Test C: extended regression training (N=256)
-├── exp_3.py                # Permutation importance analysis (N=256)
+├── exp_3.py                # Permutation importance + 4D minimal descriptor ablation (N=256)
 ├── exp_4.py                # Full ablation at N=1024 (finite-size scaling)
 │
 ├── test/                   # Raw outputs from initial N=256 experiments
@@ -54,7 +115,7 @@ solid_state_battery/
 │   ├── testA_clf_curves.png
 │   └── testB_clf_curves.png
 │
-├── test_3/                 # Permutation importance figures (used in paper)
+├── test_3/                 # Permutation importance + 4D ablation figures (used in paper)
 │   ├── permutation_importance_bar_fixed.png
 │   ├── permutation_importance_heatmap_fixed.png
 │   └── permutation_importance_table.txt
@@ -81,18 +142,18 @@ Single-component Lennard-Jones glass, `N = 256` and `N = 1024` particles, densit
 Each cycle applies 8% affine volumetric expansion (charge) followed by compression back to original volume (discharge), with 500 Brownian dynamics steps at `T = 0.42 ≈ 0.93 Tg` after each half-cycle. Snapshots saved at cycles `{0, 50, 100, 200, 300, 400}`.
 
 ### Node Features
-Per-atom bond-length statistics computed within cutoff `rc = 1.5 σ`:
 
 | Feature set | Dimensions | Features |
 |---|---|---|
-| 5D base | 5 | mean, std, min, max, coordination |
-| 8D extended | 8 | 5D + skewness, Q25, Q75 |
+| 5D base | 5 | mean r̄, std σ_r, r_min, r_max, coordination d̃ |
+| 8D extended | 8 | 5D + skewness γ̃, Q25, Q75 |
+| **4D minimal** | **4** | **r_max, r̄, σ_r, γ̃** (minimal sufficient set) |
 
 ### GNN Architecture
-GATv2 with 2 message-passing layers (4 attention heads each), global mean pooling, shared encoder/head for both classification and regression. Identical architecture used at both N=256 and N=1024.
+GATv2 with 2 message-passing layers (4 attention heads each), global mean pooling, shared encoder/head for classification and regression. Identical architecture used at N=256 and N=1024, with encoder input dimension inferred automatically from data.
 
 ### Training
-Adam optimizer, `lr = 3×10⁻⁴`, cosine annealing, early stopping on validation loss. 5-fold stratified cross-validation, glass-level splits (no data leakage between train/val folds).
+Adam optimizer, `lr = 3×10⁻⁴`, cosine annealing, early stopping on **validation loss** (not accuracy — accuracy creates a false optimum at epoch 1 for random-weight models). 5-fold stratified cross-validation, glass-level splits to prevent data leakage.
 
 ---
 
@@ -104,37 +165,34 @@ Adam optimizer, `lr = 3×10⁻⁴`, cosine annealing, early stopping on validati
 pip install jax jaxlib torch torch-geometric numpy matplotlib scipy
 ```
 
-A CUDA-capable GPU is recommended. All experiments were run on a Tesla T4 (Google Colab free tier).
+A CUDA-capable GPU is recommended. All experiments were run on a Tesla T4 (Google Colab free tier). N=256 data generation takes ~10 minutes; N=1024 takes ~665 minutes.
 
-### Step 1 — Generate glass data (N=256)
+### Step 1 — N=256 experiments (Baseline, Test A, Test B, Test C)
 
-Glass generation is embedded in `exp_1.py`. Pre-generated snapshots are provided in `test_v2/battery_snapshots.npy`.
-
-### Step 2 — Run N=256 experiments
+Pre-generated snapshots are available in `test_v2/battery_snapshots.npy`.
 
 ```bash
-# Baseline + Test A + Test B (classification and regression)
-python exp_1.py
-
-# Test C: extended regression
-python exp_2.py
+python exp_1.py   # Baseline + Test A + Test B (classification and regression)
+python exp_2.py   # Test C: extended regression (300 epochs, patience 50)
 ```
 
-### Step 3 — Permutation importance
+### Step 2 — Permutation importance + 4D minimal descriptor ablation
 
 ```bash
 python exp_3.py
 ```
 
-### Step 4 — Generate N=1024 data
+Produces: permutation importance bar chart, per-fold heatmap, permutation table, and 4D vs 8D comparison.
+
+### Step 3 — Generate N=1024 glass data
 
 ```bash
 python data_gen_1k.py
 ```
 
-Pre-generated data is available in `results_N1024/battery_LJN1024_ALL300_merged.npy`.
+Pre-generated data: `results_N1024/battery_LJN1024_ALL300_merged.npy` (300 glasses × 6 snapshots).
 
-### Step 5 — Run N=1024 experiments
+### Step 4 — N=1024 finite-size scaling experiments
 
 ```bash
 python exp_4.py
