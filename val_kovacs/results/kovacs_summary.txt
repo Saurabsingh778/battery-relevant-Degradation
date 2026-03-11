@@ -1,0 +1,22 @@
+====================================================================
+KOVACS MEMORY EFFECT - SUMMARY
+====================================================================
+
+SIMULATION
+  N=10000, binary LJ, rho=1.2, NVT
+  Quench T=2.0->0.3 (50k steps)  |  Age T=0.3 (100k steps)
+  Kovacs hold T=0.4 (200k steps)
+
+PE RELAXATION
+  Initial dPE  : -0.134030 LJ
+  Inflection   : step 500  dPE=-0.003290
+  Final dPE    : -0.005290 LJ
+  KWW tau      : ~1 steps (fast initial jump, NVT ensemble)
+
+INTERPRETATION
+  Aged glass sits in deeper PEL basin -> dPE starts negative.
+  Relaxation toward zero = structural equilibration at T=0.4.
+  D2min grows monotonically: continuous particle rearrangements
+  even after macroscopic PE has equilibrated.
+  For classic volume Kovacs bump, re-run with NPT ensemble.
+====================================================================
